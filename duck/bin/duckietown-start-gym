@@ -1,0 +1,12 @@
+#!"/Users/qiuyueyouji/Documents/NUS/year4 sem2/cs4278/project/CS4278-5478-Project-Materials/duck/bin/python3"
+# EASY-INSTALL-ENTRY-SCRIPT: 'gym-duckietown','console_scripts','duckietown-start-gym'
+__requires__ = 'gym-duckietown'
+import re
+import sys
+from pkg_resources import load_entry_point
+
+if __name__ == '__main__':
+    sys.argv[0] = re.sub(r'(-script\.pyw?|\.exe)?$', '', sys.argv[0])
+    sys.exit(
+        load_entry_point('gym-duckietown', 'console_scripts', 'duckietown-start-gym')()
+    )

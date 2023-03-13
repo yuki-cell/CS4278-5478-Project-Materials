@@ -1,0 +1,12 @@
+#!/bin/sh
+'''exec' "/Users/qiuyueyouji/Documents/NUS/year4 sem2/cs4278/project/CS4278-5478-Project-Materials/duck/bin/python3" "$0" "$@"
+' '''
+# -*- coding: utf-8 -*-
+import re
+import sys
+
+from setuptools.command.easy_install import main
+
+if __name__ == '__main__':
+    sys.argv[0] = re.sub(r'(-script\.pyw?|\.exe)?$', '', sys.argv[0])
+    sys.exit(main())

@@ -1,0 +1,5 @@
+PyContracts<2,>=1.5
+numpy
+
+[algorithms]
+scipy
