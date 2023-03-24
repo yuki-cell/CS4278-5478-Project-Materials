@@ -129,7 +129,8 @@ else:
             # yellow lane for left lane
             # white lane for right lane
             # blur the image to remove the noise (ex: grass section)
-            img_blur = cv2.GaussianBlur(obs,(7,7),0)
+            # map1: (7, 7) well for green noise
+            img_blur = cv2.GaussianBlur(obs,(11,11),0)
             # It converts the BGR color space of image to HSV color space
             # BGR2HSVとRGB2HSVがある, BGRじゃなくRGBが正解っぽい
             hsv = cv2.cvtColor(img_blur, cv2.COLOR_RGB2HSV)
@@ -140,17 +141,31 @@ else:
             lower_white = np.array([0,0,0])
             upper_white = np.array([255,10,255])
             # yellow
-            lower_yellow = np.array([20,100,100])
+            lower_yellow = np.array([20,80,80])
             upper_yellow = np.array([30,255,255])
         
             # preparing the mask to overlay
             mask_white = cv2.inRange(hsv, lower_white, upper_white)
             mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
+
             
             # The black region in the mask has the value of 0,
             # so when multiplied with original image removes all non-blue regions
             result_white = cv2.bitwise_and(obs, obs, mask = mask_white)
             result_yellow = cv2.bitwise_and(obs, obs, mask = mask_yellow)
+            # plt.figure()
+            # plt.title('result white')
+            # plt.imshow(result_white)
+            # filename = 'milestone1_logs/' + str(time.time())+ '.png'
+            # plt.savefig(filename)
+            # plt.close()
+
+            # plt.figure()
+            # plt.title('result yellow')
+            # plt.imshow(result_yellow)
+            # filename = 'milestone1_logs/' + str(time.time())+ '.png'
+            # plt.savefig(filename)
+            # plt.close()
 
             # Call Canny Edge Detection here.
             # convert to grayscale here.
@@ -159,20 +174,26 @@ else:
             # white lane for right lane
             right_gray_image = cv2.cvtColor(result_white, cv2.COLOR_RGB2GRAY)
             # use blurred image to select threshold for canny
-            img_blur = cv2.GaussianBlur(obs,(7,7),0)
-            med_val = np.median(img_blur)
-            sigma = 0.33  # 0.33
-            min_val = int(max(0, (1.0 - sigma) * med_val))
-            max_val = int(max(255, (1.0 + sigma) * med_val))
-            left_cannyed_image = cv2.Canny(left_gray_image, min_val, max_val)
-            right_cannyed_image = cv2.Canny(right_gray_image, min_val, max_val)
+            def extract_canny_edges(img):
+                img_blur = cv2.GaussianBlur(img,(7,7),0)
+                med_val = np.median(img_blur)
+                sigma = 0.33  # 0.33
+                min_val = int(max(0, (1.0 - sigma) * med_val))
+                max_val = int(max(255, (1.0 + sigma) * med_val))
+                cannyed_img = cv2.Canny(img_blur, min_val, max_val)
+                return cannyed_img
+            
+            left_cannyed_image = extract_canny_edges(left_gray_image)
+            right_cannyed_image = extract_canny_edges(right_gray_image)
             # plt.figure()
             # plt.title('left cannyed imaged')
             # plt.imshow(left_cannyed_image)
             # plt.figure()
             # plt.title('right cannyed imaged')
             # plt.imshow(right_cannyed_image)
-            # plt.show()
+            # filename = 'milestone1_logs/' + str(time.time())+ '.png'
+            # plt.savefig(filename)
+            # plt.close()
 
             # 下半分だけcropする?
             def region_of_interest(img, vertices):
@@ -188,8 +209,8 @@ else:
                 # make sure that shape if drawn by connecting points in order of verticies
                 # ex: top left -> bottom right: invalid square
                 # ex: top left -> bottom left: valid square
-                (0, 100),
-                (width, 100),
+                (0, 0),
+                (width, 0),
                 (width, 400),
                 (0, 400)   
             ]
@@ -211,13 +232,15 @@ else:
                     img,
                     rho=6,
                     theta=np.pi / 60,
-                    threshold=160,
+                    # only accpect line with # of votes > threshold
+                    # initial: 160
+                    threshold=80,
                     lines=np.array([]),
                     #minLineLength: 元々40
                     #長さ増やすことでいい感じのlaneだけ取れる(画像によって変わりそうやから微調整は必要そう)
                     minLineLength=40,
                     # default: 25
-                    maxLineGap=25
+                    maxLineGap=50
                 )
                 if lines is None:
                     return []
@@ -255,8 +278,18 @@ else:
             left_line_image = draw_lines(obs, left_lines) # <---- Add this call.
             right_line_image = draw_lines(obs, right_lines)
             # plt.figure()
-            # plt.title('All lines')
-            # plt.imshow(line_image)
+            # plt.title('All left lines')
+            # plt.imshow(left_line_image)
+            # filename = 'milestone1_logs/' + str(time.time())+ '.png'
+            # plt.savefig(filename)
+            # plt.close()
+
+            # plt.figure()
+            # plt.title('All right lines')
+            # plt.imshow(right_line_image)
+            # filename = 'milestone1_logs/' + str(time.time())+ '.png'
+            # plt.savefig(filename)
+            # plt.close()
     
             # group line to left and right group
             left_line_x = []
@@ -267,13 +300,15 @@ else:
             # filter by slope
             def isSlopeValid(slope):
                 #どのslopeの値を無視するか微調整必要(initial: 0.5)
-                    if math.fabs(slope) < 0.1: # <-- Only consider extreme slope
+                    if math.fabs(slope) < 0.25: # <-- Only consider extreme slope
                         return False
                     else:
                         return True
+            # print('--------------')
             for line in left_lines:
                 for x1, y1, x2, y2 in line:
                     slope = (y2 - y1) / (x2 - x1) 
+                    # print(slope)
                     if not isSlopeValid(slope):
                         continue
                     lines_filtered_by_slope.append([[x1, y1, x2, y2]])
@@ -300,9 +335,12 @@ else:
                 lines_filtered_by_slope,
                 thickness=5,
             )
-            plt.figure()
-            plt.title('Lines filtered by slope')
-            plt.imshow(line_image)
+            # plt.figure()
+            # plt.title('Lines filtered by slope')
+            # plt.imshow(line_image)
+            # filename = 'milestone1_logs/' + str(time.time())+ '.png'
+            # plt.savefig(filename)
+            # plt.close()
 
             # Creating a Single Linear Representation of each Line Group
             # min_y needs to be in int for draw_lines()?
@@ -358,12 +396,16 @@ else:
                 merged_lines,
                 thickness=5,
             )
-            plt.figure()
-            plt.title('Representative line of left and right group')
-            plt.imshow(line_image)
-            filename = 'milestone1_logs/' + 'representative_line_' + str(time.time())+ '.png'
-            plt.savefig(filename)
-            plt.close()
+            # plt.figure()
+            # plt.title('Representative line of left and right group')
+            # plt.imshow(line_image)
+            # filename = 'milestone1_logs/' + str(time.time())+ '.png'
+            # plt.savefig(filename)
+            # plt.close()
+
+            # filename = 'milestone1_logs/' + 'representative_line_' + str(time.time())+ '.png'
+            # plt.savefig(filename)
+            # plt.close()
             # plt.show()
 
             # Make action decision based on representative line of left and right group
@@ -456,8 +498,8 @@ else:
                 isFirst = False
                 continue
 
-            # adjust rotation before taking action in every step       
-            left_slope, right_slope = adjust_rotation()
+            # # adjust rotation before taking action in every step       
+            # left_slope, right_slope = adjust_rotation()
 
             # ex: (1, 6), forward
             # after split: ' forward\n'
@@ -478,8 +520,10 @@ else:
             initial_tile = info['curr_pos']
             current_tile = initial_tile
             # keep moving until robot gets to next tile
+            move = line.split(',')[-1][1:-1]
+            if move == 'forward':
+                left_slope, right_slope = adjust_rotation()
             while current_tile != next_tile:
-                move = line.split(',')[-1][1:-1]
                 if move == 'forward':
                     # move slightly to push robot to middle of lane?
                     # rotate based on slope of left and right
@@ -494,9 +538,10 @@ else:
                     # lin_velが1だとなぜかrotateが効かなくなる?
                     action = [0.5, rotate]
                 elif move == 'left':
-                    action = [0,1]
+                    # lin_vel, rotation
+                    action = [0.3,0.4]
                 elif move == 'right':
-                    action = [0,-1]
+                    action = [0.1,-0.4]
                 else:
                     raise ValueError('invalid move in given path txt file') 
                 # take action
