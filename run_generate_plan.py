@@ -114,6 +114,41 @@ else:
         except Exception as e:
             print('Failed to delete %s. Reason: %s' % (file_path, e))
 
+    # color filtering
+    def filter_by_color(img, lower_range, upper_range):
+        # blur the image to remove the noise (ex: grass section)
+        # map1: (7, 7) well for green noise
+        img_blur = cv2.GaussianBlur(img,(15,15),0)
+        # It converts the BGR color space of image to HSV color space
+        # BGR2HSVとRGB2HSVがある, BGRじゃなくRGBが正解っぽい
+        hsv = cv2.cvtColor(img_blur, cv2.COLOR_RGB2HSV)
+        # preparing the mask to overlay
+        mask = cv2.inRange(hsv, lower_range, upper_range)
+        # The black region in the mask has the value of 0,
+        # so when multiplied with original image removes all non-blue regions
+        result_filtered = cv2.bitwise_and(img, img, mask = mask)
+        return result_filtered
+    def get_yellow_section(img):
+        # yellow threshold in hsv
+        lower_yellow = np.array([20,80,80])
+        upper_yellow = np.array([30,255,255])
+        result_yellow = filter_by_color(img, lower_yellow, upper_yellow)
+        return result_yellow
+    def get_white_section(img):
+        # white (and gray) threshold in hsv
+        lower_white = np.array([0,0,0])
+        upper_white = np.array([255,10,255])
+        result_white = filter_by_color(img, lower_white, upper_white)
+        return result_white
+
+    # crop
+    def region_of_interest(img, vertices):
+                mask = np.zeros_like(img)
+                match_mask_color = 255 # <-- This line altered for grayscale.
+                cv2.fillPoly(mask, vertices, match_mask_color)
+                masked_image = cv2.bitwise_and(img, mask)
+                return masked_image
+
     def adjust_rotation(is_move_right = False, is_move_left = False):
         # adjust initial pose of robot to face next tile
         # set limit to avoid infinite loop
@@ -126,31 +161,6 @@ else:
             obs, reward, done, info = env.step([speed, steering])
 
             # color filtering
-            def filter_by_color(img, lower_range, upper_range):
-                # blur the image to remove the noise (ex: grass section)
-                # map1: (7, 7) well for green noise
-                img_blur = cv2.GaussianBlur(img,(11,11),0)
-                # It converts the BGR color space of image to HSV color space
-                # BGR2HSVとRGB2HSVがある, BGRじゃなくRGBが正解っぽい
-                hsv = cv2.cvtColor(img_blur, cv2.COLOR_RGB2HSV)
-                # preparing the mask to overlay
-                mask = cv2.inRange(hsv, lower_range, upper_range)
-                # The black region in the mask has the value of 0,
-                # so when multiplied with original image removes all non-blue regions
-                result_filtered = cv2.bitwise_and(img, img, mask = mask)
-                return result_filtered
-            def get_yellow_section(img):
-                # yellow threshold in hsv
-                lower_yellow = np.array([20,80,80])
-                upper_yellow = np.array([30,255,255])
-                result_yellow = filter_by_color(img, lower_yellow, upper_yellow)
-                return result_yellow
-            def get_white_section(img):
-                # white (and gray) threshold in hsv
-                lower_white = np.array([0,0,0])
-                upper_white = np.array([255,10,255])
-                result_white = filter_by_color(img, lower_white, upper_white)
-                return result_white
             result_white = get_white_section(obs)
             result_yellow = get_yellow_section(obs)
             
@@ -176,7 +186,7 @@ else:
                 # Call Canny Edge Detection here.
                 # use blurred image to select threshold for canny
                 def extract_canny_edges(img):
-                    img_blur = cv2.GaussianBlur(img,(11,11),0)
+                    img_blur = cv2.GaussianBlur(img,(9,9),0)
                     med_val = np.median(img_blur)
                     sigma = 0.33  # 0.33
                     min_val = int(max(0, (1.0 - sigma) * med_val))
@@ -201,13 +211,6 @@ else:
             # plt.close()
 
             # crop
-            def region_of_interest(img, vertices):
-                mask = np.zeros_like(img)
-                match_mask_color = 255 # <-- This line altered for grayscale.
-                cv2.fillPoly(mask, vertices, match_mask_color)
-                masked_image = cv2.bitwise_and(img, mask)
-                return masked_image
-            # middle half
             height, width = yellow_cannyed_image.shape[:2]
             region_of_interest_vertices = [
                 # order of verticies is important
@@ -298,12 +301,12 @@ else:
             # plt.savefig(filename)
             # plt.close()
 
-            # plt.figure()
-            # plt.title('All white lines')
-            # plt.imshow(white_line_image)
-            # filename = 'milestone1_logs/white_all_line' + str(time.time())+ '.png'
-            # plt.savefig(filename)
-            # plt.close()
+            plt.figure()
+            plt.title('All white lines')
+            plt.imshow(white_line_image)
+            filename = 'milestone1_logs/white_all_line' + str(time.time())+ '.png'
+            plt.savefig(filename)
+            plt.close()
     
             # Filter lines by slop
             # group to left and right based on slop
@@ -312,7 +315,10 @@ else:
             def split_lines_to_left_right(lines):
                 def isSlopeValid(slope):
                     #どのslopeの値を無視するか微調整必要(initial: 0.5)
-                    if math.fabs(slope) < 0.15: # too horizontal
+                    print(slope)
+                    # if math.fabs(slope) < 0.15: # too horizontal
+                    # for map5_0, white lane is very close to horizontal
+                    if math.fabs(slope) < 0.05:
                         return False
                     elif math.fabs(slope) > 3: # too vertical
                         return False
@@ -361,19 +367,19 @@ else:
                 right_lines_filtered_by_slope,
                 thickness=5,
             )
-            # plt.figure()
-            # plt.title('right Lines filtered by slope')
-            # plt.imshow(right_line_image)
-            # filename = 'milestone1_logs/' + str(time.time())+ '.png'
-            # plt.savefig(filename)
-            # plt.close()
+            plt.figure()
+            plt.title('right Lines filtered by slope')
+            plt.imshow(right_line_image)
+            filename = 'milestone1_logs/' + str(time.time())+ '.png'
+            plt.savefig(filename)
+            plt.close()
 
-            # plt.figure()
-            # plt.title('left Lines filtered by slope')
-            # plt.imshow(left_line_image)
-            # filename = 'milestone1_logs/' + str(time.time())+ '.png'
-            # plt.savefig(filename)
-            # plt.close()
+            plt.figure()
+            plt.title('left Lines filtered by slope')
+            plt.imshow(left_line_image)
+            filename = 'milestone1_logs/' + str(time.time())+ '.png'
+            plt.savefig(filename)
+            plt.close()
 
             # Creating a Single Linear Representation of each Line Group
             # min_y needs to be in int for draw_lines()?
@@ -484,28 +490,11 @@ else:
                         while (not is_yellow_right_line_visible) and i < 10:
                             i += 1
                             obs, reward, done, info = env.step([0,0])
-                            # plt.figure()
-                            # plt.title('obs')
-                            # plt.imshow(obs)
-                            # filename = 'milestone1_logs/obs' + str(time.time())+ '.png'
-                            # plt.savefig(filename)
-                            # plt.close()
 
                             result_yellow = get_yellow_section(obs)
-                            # plt.figure()
-                            # plt.title('result_yellow ')
-                            # plt.imshow(result_yellow)
-                            # filename = 'milestone1_logs/result_yellow_' + str(time.time())+ '.png'
-                            # plt.savefig(filename)
-                            # plt.close()
+
                             yellow_edge_image = get_edge_image(result_yellow)
-                            # plt.figure()
-                            # plt.title('yellow edge')
-                            # plt.imshow(yellow_edge_image)
-                            # filename = 'milestone1_logs/yellow_edge_' + str(time.time())+ '.png'
-                            # plt.savefig(filename)
-                            # plt.close()
-                            # for this edge case, only bottom half is needed?
+
                             height, width = yellow_edge_image.shape[:2]
                             region_of_interest_vertices = [
                                 (0, int(height/2)),
@@ -517,22 +506,10 @@ else:
                                 yellow_edge_image,
                                 np.array([region_of_interest_vertices], np.int32)
                             )
-                            # plt.figure()
-                            # plt.title('yellow edge')
-                            # plt.imshow(yellow_edge_image)
-                            # filename = 'milestone1_logs/yellow_edge_' + str(time.time())+ '.png'
-                            # plt.savefig(filename)
-                            # plt.close()
-                            # line detect
+
                             yellow_lines = detect_lines(yellow_edge_image, minLineLength=25, maxLineGap=25)
                             yellow_line_image = draw_lines(obs,yellow_lines)
-                            # plt.figure()
-                            # plt.title('All yellow lines')
-                            # plt.imshow(yellow_line_image)
-                            # filename = 'milestone1_logs/yellow_all_line_' + str(time.time())+ '.png'
-                            # plt.savefig(filename)
-                            # plt.close()
-                            # split 
+
                             yellow_left_line_x, yellow_left_line_y, yellow_right_line_x, yellow_right_line_y = split_lines_to_left_right(yellow_lines)
                             # check yellow right exists
                             if len(yellow_right_line_x) > 0:
@@ -766,7 +743,36 @@ else:
                     action = [0.5, rotate]
                 elif move == 'left':
                     # lin_vel, rotation
-                    action = [0.3,0.4]
+                    # change steepness based on middle yellow line?
+                    # 左に曲がる際, 真ん中に黄色の補助線がある場合とない場合がある 
+                    # use if bottom center is yellow or not to check if curve is valid?
+                    result_yellow = get_yellow_section(obs)
+                    height, width = obs.shape[:2]
+                    # row, col = y, x(top left)
+                    print(result_yellow[400][300])
+                    bottom_center = result_yellow[400][300]
+                    if all(bottom_center) == 0:
+                        # bottom center = black means yellow line is left side
+                        print('valid left curve')
+                        action = [0.3,0.4]
+                    else:
+                        # bottom center = not black = yellow means yellow line is around middle and current left rotation is too strong
+                        print('invalid left curve')
+                        # probably curve too much, go to right 
+                        action = [0,-5]
+                        env.step(action)
+                        env.render()
+                        for i in range(4):
+                            action = [1,0]
+                            env.step([1,0])
+                            env.render()
+                    # plt.figure()
+                    # plt.title('yellow')
+                    # plt.imshow(result_yellow)
+                    # filename = 'milestone1_logs/' + str(time.time())+ '.png'
+                    # plt.savefig(filename)
+                    # plt.close()
+
                 elif move == 'right':
                     action = [0.1,-0.3]
                 else:
