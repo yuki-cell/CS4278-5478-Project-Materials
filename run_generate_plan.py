@@ -114,6 +114,11 @@ else:
         except Exception as e:
             print('Failed to delete %s. Reason: %s' % (file_path, e))
 
+    actions_saved = []
+    def step_and_record(action):
+        actions_saved.append(action)
+        return env.step(action)
+
     # color filtering
     def filter_by_color(img, lower_range, upper_range):
         # blur the image to remove the noise (ex: grass section)
@@ -136,8 +141,8 @@ else:
         return result_yellow
     def get_white_section(img):
         # white (and gray) threshold in hsv
-        lower_white = np.array([0,0,0])
-        upper_white = np.array([255,10,255])
+        lower_white = np.array([0,0,150])
+        upper_white = np.array([255,20,255])
         result_white = filter_by_color(img, lower_white, upper_white)
         return result_white
 
@@ -149,7 +154,7 @@ else:
                 masked_image = cv2.bitwise_and(img, mask)
                 return masked_image
 
-    def adjust_rotation(is_move_right = False, is_move_left = False):
+    def adjust_rotation(is_move_right = False, is_move_left = False, is_first_time = False):
         # adjust initial pose of robot to face next tile
         # set limit to avoid infinite loop
         i = 0
@@ -164,12 +169,12 @@ else:
             result_white = get_white_section(obs)
             result_yellow = get_yellow_section(obs)
             
-            # plt.figure()
-            # plt.title('result white')
-            # plt.imshow(result_white)
-            # filename = 'milestone1_logs/white_' + str(time.time())+ '.png'
-            # plt.savefig(filename)
-            # plt.close()
+            plt.figure()
+            plt.title('result white')
+            plt.imshow(result_white)
+            filename = 'milestone1_logs/white_' + str(time.time())+ '.png'
+            plt.savefig(filename)
+            plt.close()
 
             # plt.figure()
             # plt.title('result yellow')
@@ -219,8 +224,10 @@ else:
                 # ex: top left -> bottom left: valid square
                 (0, 100),
                 (width, 100),
-                (width, 450),
-                (0, 450)   
+                # crop: test caseによって450と400を切り替えている
+                # - 毎回切り替えずに済む方法はないか?
+                (width, 400),
+                (0, 400)   
             ]
             yellow_cannyed_image = region_of_interest(
                 yellow_cannyed_image,
@@ -235,14 +242,14 @@ else:
             # plt.imshow(cropped_cannyed_image)
 
             # detect line from edges
-            def detect_lines(img, minLineLength, maxLineGap):
+            def detect_lines(img, threshold=80, minLineLength=40, maxLineGap=25):
                 lines = cv2.HoughLinesP(
                     img,
                     rho=6,
                     theta=np.pi / 60,
                     # only accpect line with # of votes > threshold
-                    # initial: 160
-                    threshold=80,
+                    # initial: 160->80
+                    threshold=threshold,
                     lines=np.array([]),
                     #minLineLength: 元々40
                     #長さ増やすことでいい感じのlaneだけ取れる(画像によって変わりそうやから微調整は必要そう)
@@ -263,8 +270,8 @@ else:
             # white_lines = detect_lines(white_cannyed_image, minLineLength=40, maxLineGap=10)
             
             # 上より緩い条件の値
-            yellow_lines = detect_lines(yellow_cannyed_image, minLineLength=25, maxLineGap=25)
-            white_lines = detect_lines(white_cannyed_image, minLineLength=25, maxLineGap=25)
+            yellow_lines = detect_lines(yellow_cannyed_image, threshold=50, minLineLength=25, maxLineGap=25)
+            white_lines = detect_lines(white_cannyed_image, threshold=80, minLineLength=25, maxLineGap=25)
 
             def draw_lines(img, lines, color=[255, 0, 0], thickness=3):
                 # If there are no lines to draw, exit.
@@ -301,12 +308,12 @@ else:
             # plt.savefig(filename)
             # plt.close()
 
-            plt.figure()
-            plt.title('All white lines')
-            plt.imshow(white_line_image)
-            filename = 'milestone1_logs/white_all_line' + str(time.time())+ '.png'
-            plt.savefig(filename)
-            plt.close()
+            # plt.figure()
+            # plt.title('All white lines')
+            # plt.imshow(white_line_image)
+            # filename = 'milestone1_logs/white_all_line' + str(time.time())+ '.png'
+            # plt.savefig(filename)
+            # plt.close()
     
             # Filter lines by slop
             # group to left and right based on slop
@@ -315,10 +322,14 @@ else:
             def split_lines_to_left_right(lines):
                 def isSlopeValid(slope):
                     #どのslopeの値を無視するか微調整必要(initial: 0.5)
-                    print(slope)
+                    # print(slope)
                     # if math.fabs(slope) < 0.15: # too horizontal
                     # for map5_0, white lane is very close to horizontal
-                    if math.fabs(slope) < 0.05:
+                    if is_first_time and math.fabs(slope) < 0.05:
+                        # allow horizontal for first time(edge cases)
+                        return False
+                    elif not is_first_time and math.fabs(slope) < 0.3:
+                        # for other time, sticter rule
                         return False
                     elif math.fabs(slope) > 3: # too vertical
                         return False
@@ -349,8 +360,7 @@ else:
                             right_line_y.extend([y1, y2])
                 return left_line_x, left_line_y, right_line_x, right_line_y
             
-            # print(yellow_lines)
-            # print(white_lines)
+            
             yellow_left_line_x, yellow_left_line_y, yellow_right_line_x, yellow_right_line_y = split_lines_to_left_right(yellow_lines)
             white_left_line_x, white_left_line_y, white_right_line_x, white_right_line_y = split_lines_to_left_right(white_lines)    
             
@@ -375,7 +385,7 @@ else:
             plt.close()
 
             plt.figure()
-            plt.title('left Lines filtered by slope')
+            plt.title('left lines filtered by slope')
             plt.imshow(left_line_image)
             filename = 'milestone1_logs/' + str(time.time())+ '.png'
             plt.savefig(filename)
@@ -385,23 +395,67 @@ else:
             # min_y needs to be in int for draw_lines()?
             # min_y = int(obs.shape[0] * (3 / 5)) # <-- Just below the horizon
             min_y = 0
-            max_y = obs.shape[0] # <-- The bottom of the image
+            max_y = height
             def get_line_representation(lines_x, lines_y):
+                if len(lines_x) == 0:
+                    return None, None
                 x_start = None
                 x_end = None
-                # group lines
-                if len(lines_x) > 0 and len(lines_y) > 0:
-                    poly_left = np.poly1d(np.polyfit(
-                        lines_y,
-                        lines_x,
-                        deg=1
-                    ))
-                    x_start = int(poly_left(max_y))
-                    x_end = int(poly_left(min_y))
+                # group lines, poly fit doesnt work well in some cases?
+                # if len(lines_x) > 0 and len(lines_y) > 0:
+                #     poly_left = np.poly1d(np.polyfit(
+                #         lines_y,
+                #         lines_x,
+                #         deg=1
+                #     ))
+                #     x_start = int(poly_left(max_y))
+                #     x_end = int(poly_left(min_y))
+
+                # try average?
+                x1_list = []
+                x2_list = []
+                y1_list = []
+                y2_list = []
+                print('length')
+                print(len(lines_x))
+                for i in range(0, len(lines_x), 2):
+                    x1_list.append(lines_x[i])
+                    x2_list.append(lines_x[i+1])
+                    y1_list.append(lines_y[i])
+                    y2_list.append(lines_y[i+1])
+                x1_avg = sum(x1_list) / len(x1_list)
+                y1_avg = sum(y1_list) / len(y1_list)
+                x2_avg = sum(x2_list) / len(x2_list)
+                y2_avg = sum(y2_list) / len(y2_list)
+                def find_x(y):
+                    m = (y2_avg - y1_avg) / (x2_avg - x1_avg)
+                    x = x1_avg + (y - y1_avg) / m
+                    return x
+                x_start = int(find_x(max_y))
+                x_end = int(find_x(min_y))
                 return x_start, x_end
+        
+
             # for yellow, left/right group
             yellow_left_merge_x_start, yellow_left_merge_x_end = get_line_representation(yellow_left_line_x, yellow_left_line_y)
+            if (yellow_left_merge_x_start is not None):
+                line_image = draw_lines(
+                    obs,
+                    [[
+                        [yellow_left_merge_x_start, max_y, yellow_left_merge_x_end, min_y]
+                    ]],
+                    thickness=5,
+                )
+                # plt.figure()
+                # plt.title('new grouping method')
+                # plt.imshow(line_image)
+                # filename = 'milestone1_logs/' + str(time.time())+ '.png'
+                # plt.savefig(filename)
+                # plt.close()
+
+
             yellow_right_merge_x_start, yellow_right_merge_x_end = get_line_representation(yellow_right_line_x, yellow_right_line_y)
+
             # for white, left/right group
             white_left_merge_x_start, white_left_merge_x_end = get_line_representation(white_left_line_x, white_left_line_y)
             white_right_merge_x_start, white_right_merge_x_end = get_line_representation(white_right_line_x, white_right_line_y)
@@ -422,7 +476,10 @@ else:
                 white_right_merged_lines = [[white_right_merge_x_start, max_y, white_right_merge_x_end, min_y]]
                 # lower line is correct lane?
                 # compare y value on center of image
-                center_x = int(width / 2)
+                # -> change to avg_x of white right or left?
+                # center_x = int(width / 2)
+                white_right_avg_x = sum(white_right_line_x) / len(white_right_line_x)
+                white_left_avg_x = sum(white_left_line_x) / len(white_left_line_x)
                 def find_y(line, x_val):
                     x1, y1, x2, y2 =  line[0]
                     slope = (y2 - y1) / (x2 - x1)
@@ -430,10 +487,8 @@ else:
                     y_val = slope * (x_val - x1) + y1
                     return y_val
 
-                white_left_center_y = find_y(white_left_merged_lines, center_x)
-                white_right_center_y = find_y(white_right_merged_lines, center_x)
-                print('left_y: ' + str(white_left_center_y))
-                print('right_y: ' + str(white_right_center_y))
+                white_left_center_y = find_y(white_left_merged_lines, white_left_avg_x)
+                white_right_center_y = find_y(white_right_merged_lines, white_right_avg_x)
                 # becareful: origin is at top left
                 # - this means that lower line has higher y value
                 # - opposite to normal x, y coordinate system
@@ -465,8 +520,8 @@ else:
                 right_slope = (y2 - y1) / (x2 - x1)
                 if right_slope > 0:
                     merged_lines.append(white_right_merged_lines)
-
-
+            print('mergedLines: ')
+            print(merged_lines)
 
             # edge case: merged lines does not exists
             # my initial algorithm was based on assumption that 
@@ -482,6 +537,7 @@ else:
                 # - it possibly means robot is at left lane
                 if (white_left_merge_x_start is not None) or (yellow_right_merge_x_start is not None):
                     # possible left lane
+                    print('possible left lane')
                     # job of adjust rotation is to rotate until yellow right (middle line) is seen 
                     # moving forward to right lane is done in forward action execution
                     def rotate_until_yellow_line_is_visible():
@@ -516,14 +572,14 @@ else:
                                 is_yellow_right_line_visible = True
                             else:
                                 right = [0, -1]
-                                env.step(right)
+                                step_and_record(right)
                                 env.render()
                         if (not is_yellow_right_line_visible):
                             print('on wrong lane but cannot find yellow middle line even after rotating right')
                         # additional adjustment
                         right = [-0.8, -5]
                         for i in range(3):
-                            env.step(right)
+                            step_and_record(right)
                             env.render()
                     
                     rotate_until_yellow_line_is_visible()
@@ -531,6 +587,7 @@ else:
                     
                 # else: yellow and white line does not exist at all
                 # - no lane, possibly curve lane
+                print('no lane, possible curve')
                 return None, None
             
             line_image = draw_lines(
@@ -556,14 +613,14 @@ else:
                 print('white right exists, yellow left doesnt exist')
                 print('-> on right lane, turn left')
                 left = [0, 3]
-                env.step(left)
+                step_and_record(left)
             elif white_right_merged_lines == None:
                 is_move_forward = (not is_move_right) and (not is_move_left)
                 if is_move_forward:
                     # check if move is forward
                     print('white right doesnt exist')
                     right = [0, -3]
-                    env.step(right)
+                    step_and_record(right)
                 else:
                     # if curve to right, no white right merged lines is valid
                     print('white right doesnt exist, but curve')
@@ -609,10 +666,10 @@ else:
                     # not facing straight to the next tile so need to rotate
                     if inter_x < leftBoundX:
                         # left slope is bigger, need to rotate to left
-                        env.step([0, 0.5])
+                        step_and_record([0, 0.5])
                     elif rightBoundX < inter_x:
                         # right slope is bigger, need to rotate to right
-                        env.step([0, -0.5])     
+                        step_and_record([0, -0.5])     
                     else:
                         raise ValueError('invalid intersection point x between representative line of left and right group')
 
@@ -667,7 +724,7 @@ else:
             print('adjust start')
             if move == 'forward':
                 # normal case, need to face next tile and go forward
-                left_slope, right_slope = adjust_rotation()
+                left_slope, right_slope = adjust_rotation(is_first_time = isSecond)
             else:
                 # tricky case, when going left or right, straight lane might not exist
                 # without straight lane, difficult to adjust rotation
@@ -693,7 +750,7 @@ else:
                         # rotate left
                         action = [0.3,0.2]
                         # take action
-                        obs, reward, done, info = env.step(action)
+                        obs, reward, done, info = step_and_record(action)
                         env.render()
                         # update current tile
                         current_tile = info['curr_pos']
@@ -711,9 +768,16 @@ else:
                             action = [0, -20]
                             isFirst = False
                         else:
-                            action = [0.6, 0.6]
+                            result_white= get_white_section(obs)
+                            bottom_center = result_white[350][300]
+                            if all(bottom_center) == 0:
+                                # not white, good curve
+                                action = [0.6, 0.6]
+                            else:
+                                # white => curve too weak, stronger curve
+                                action = [0, 1]
                         # take action
-                        obs, reward, done, info = env.step(action)
+                        obs, reward, done, info = step_and_record(action)
                         env.render()
                         # update current tile
                         current_tile = info['curr_pos']
@@ -730,6 +794,9 @@ else:
                     rotate = None
                     if left_slope is None and right_slope is None:
                         rotate = 0
+                    elif left_slope == 'left_lane_and_yellow_middle_visible':
+                        # not sure
+                        rotate = 0
                     elif abs(left_slope) < abs(right_slope):
                         # right side of lane, move to left
                         rotate = 0.05
@@ -741,15 +808,26 @@ else:
                     # print('rotate: ' + str(rotate))
                     # lin_velが1だとなぜかrotateが効かなくなる?
                     action = [0.5, rotate]
+                    result_white= get_white_section(obs)
+                    bottom_center = result_white[350][300]
+                    if any(bottom_center) != 0:
+                        plt.figure()
+                        plt.title('forward hit white')
+                        plt.imshow(result_white)
+                        filename = 'milestone1_logs/white' + str(time.time())+ '.png'
+                        plt.savefig(filename)
+                        plt.close()
+                        # white => about to hit white lane, need to adjust
+                        action = [0, 5]
                 elif move == 'left':
                     # lin_vel, rotation
                     # change steepness based on middle yellow line?
                     # 左に曲がる際, 真ん中に黄色の補助線がある場合とない場合がある 
                     # use if bottom center is yellow or not to check if curve is valid?
                     result_yellow = get_yellow_section(obs)
+                    result_white= get_white_section(obs)
                     height, width = obs.shape[:2]
                     # row, col = y, x(top left)
-                    print(result_yellow[400][300])
                     bottom_center = result_yellow[400][300]
                     if all(bottom_center) == 0:
                         # bottom center = black means yellow line is left side
@@ -759,26 +837,36 @@ else:
                         # bottom center = not black = yellow means yellow line is around middle and current left rotation is too strong
                         print('invalid left curve')
                         # probably curve too much, go to right 
-                        action = [0,-5]
-                        env.step(action)
+                        action = [0,-3]
+                        step_and_record(action)
                         env.render()
-                        for i in range(4):
+                        for i in range(2):
                             action = [1,0]
-                            env.step([1,0])
+                            step_and_record([1,0])
                             env.render()
                     # plt.figure()
-                    # plt.title('yellow')
-                    # plt.imshow(result_yellow)
+                    # plt.title('resukt white')
+                    # plt.imshow(result_white)
                     # filename = 'milestone1_logs/' + str(time.time())+ '.png'
                     # plt.savefig(filename)
                     # plt.close()
+                    bottom_center = result_white[350][300]
+                    # map(ex: 4)によっては外カーブの線が赤色なので赤色filteringがあった方が安心?
+                    print(bottom_center)
+                    if all(bottom_center) == 0:
+                        # not white
+                        pass
+                    else:
+                        # white => curve too weak, stronger curve
+                        action = [0, 1]
+                    
 
                 elif move == 'right':
                     action = [0.1,-0.3]
                 else:
                     raise ValueError('invalid move in given path txt file') 
                 # take action
-                obs, reward, done, info = env.step(action)
+                obs, reward, done, info = step_and_record(action)
                 env.render()
                 # update current tile
                 current_tile = info['curr_pos']
@@ -789,6 +877,14 @@ else:
 
 
     # dump the controls using numpy
+    # create new controls txt file
+    filename = f'{args.map_name}_seed{args.seed}_start_{start_pos[0]},{start_pos[1]}_goal_{goal[0]},{goal[1]}.txt'
+    my_filepath = './milestone1_controls/' + filename
+    with open(my_filepath, "w") as f:
+        for action in actions_saved:
+            lin_vel, ang_vel = action[0], action[1]
+            move = f'{lin_vel},{ang_vel}'
+            f.write(f'{move}\n')
     # np.savetxt(f'./{args.map_name}_seed{args.seed}_start_{start_pos[0]},{start_pos[1]}_goal_{goal[0]},{goal[1]}.txt',
     #            actions, delimiter=',')
 
